@@ -1,21 +1,55 @@
 package mangue.config;
 
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.*;
 
 import java.io.IOException;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class ConnectionHandler extends TextWebSocketHandler {
+public class ConnectionHandler implements WebSocketHandler {
     
-    public void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
-        session.sendMessage(new TextMessage("Recebido: " + message.getPayload()));
-        System.out.println(message.getPayload());
+    private ConcurrentHashMap<WebSocketSession, String> clients = new ConcurrentHashMap<>();
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        clients.put(session, session.getId());
+    }
+
+    @Override
+    public void handleMessage(WebSocketSession session, WebSocketMessage<?> message){
+        System.out.println("[Handler] Mensagem recebida de: " + session.getId() + " -> " + message.getPayload());
+        broadcast(message);
+    }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) {
+        System.err.println("Erro de transporte: " + exception.getMessage());
+        try {
+            session.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus closeStatus) {
+        clients.remove(session, session.getId());
+    }
+
+    @Override
+    public boolean supportsPartialMessages() {
+        return false;
     }
     
-    public void onOpen(WebSocketSession session) throws IOException {
-        WebSocketMessage<String> webSocketMessage = new TextMessage("Oi");
-        session.sendMessage(webSocketMessage);
+
+    private void broadcast(WebSocketMessage<?> message) {
+        clients.keySet().forEach(s -> {
+            if (s.isOpen()) {
+                try {
+                    s.sendMessage(message);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
     }
 }
